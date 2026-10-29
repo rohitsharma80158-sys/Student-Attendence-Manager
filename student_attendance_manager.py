@@ -1,75 +1,183 @@
-import random
+import ast
+import os
 
-def play_hangman():
-    # List of words for the game as required by minimum specifications
-    word_list = ['python', 'programming', 'computer', 'science', 'university']
-    
-    # As per the assignment note: "for testing the secret word is fixed to 'python'"
-    secret_word = 'python'
-    
-    # Trackers for game state
-    guessed_letters = set()
-    wrong_guesses = 0
-    max_wrong_guesses = 6
+FILE_NAME = "attendance.txt"
+REQUIRED_PERCENTAGE = 75
+students = []
 
-    # Main game loop runs while wrong attempts are within the allowed limit
-    while wrong_guesses < max_wrong_guesses:
-        # Construct the progress string based on successfully guessed letters
-        progress = "".join([letter if letter in guessed_letters else "_" for letter in secret_word])
-        
-        # Display current word progress before asking for the next set of inputs
-        if wrong_guesses < max_wrong_guesses:
-            print(f"Progress: {progress}")
-        
-        # Check if the player has uncovered all letters (Win Condition)
-        if progress == secret_word:
-            print(f"You won! The word was {secret_word}.")
-            print(f"Wrong guesses: {wrong_guesses}/{max_wrong_guesses}")
-            return
 
-        # Prompt for user input exactly as shown in the document
-        user_input = input("Guesses: ").strip().lower()
+def load_students():
+    """Load student records from attendance.txt."""
+    global students
+    students = []
+    if not os.path.exists(FILE_NAME):
+        return
 
-        # Handle comma-separated bulk inputs (like Test Case 4: p, z, y, x, t, h, o, n)
-        inputs_list = [i.strip() for i in user_input.split(',') if i.strip() != '']
-        
-        # If the user presses enter without writing anything, skip this iteration
-        if not inputs_list:
-            continue
-
-        # Process each character provided in the current input line
-        for current_guess in inputs_list:
-            
-            # Test Case 3: Validate input length and make sure it is a letter
-            if len(current_guess) != 1 or not current_guess.isalpha():
-                print("Invalid input. Enter a single letter.")
+    with open(FILE_NAME, "r", encoding="utf-8") as file:
+        for line in file:
+            try:
+                record = ast.literal_eval(line.strip())
+                if isinstance(record, dict):
+                    students.append(record)
+            except (ValueError, SyntaxError):
                 continue
 
-            # Test Case 3: Check if the letter was already processed in a prior turn
-            if current_guess in guessed_letters:
-                print(f"You already guessed '{current_guess}' Try another letter (no attempt lost)")
-                continue
 
-            # Save the valid, unique letter to our set
-            guessed_letters.add(current_guess)
+def save_students():
+    """Save all student records to attendance.txt."""
+    with open(FILE_NAME, "w", encoding="utf-8") as file:
+        for student in students:
+            file.write(repr(student) + "\n")
 
-            # Check if the letter exists inside the hidden target word
-            if current_guess in secret_word:
-                # Print output statement inline using space separation to match Test Case 4
-                print(f"{current_guess}: Correct", end=" ")
-            else:
-                wrong_guesses += 1
-                print(f"{current_guess}: Wrong ({wrong_guesses}/{max_wrong_guesses})", end=" ")
-                
-                # Test Case 2: Check if maximum wrong attempts reached (Lose Condition)
-                if wrong_guesses == max_wrong_guesses:
-                    print()  # Move cursor to a new line
-                    print(f"Wrong guess ({wrong_guesses}/{max_wrong_guesses})")
-                    print(f"Game Over! The word was {secret_word}.")
-                    return
-        
-        # Insert a newline separator after finishing the execution of the input list
-        print()
+
+def find_student(roll):
+    for student in students:
+        if student["roll"] == roll:
+            return student
+    return None
+
+
+def attendance_percent(student):
+    if student["held"] == 0:
+        return 0.0
+    return student["attended"] / student["held"] * 100
+
+
+def add_student():
+    roll_text = input("Roll: ").strip()
+    if not roll_text.isdigit() or int(roll_text) <= 0:
+        print("Invalid roll number. Enter a positive number.")
+        return
+
+    roll = int(roll_text)
+    if find_student(roll):
+        print(f"Roll number {roll} already exists.")
+        return
+
+    name = input("Name: ").strip()
+    if not name:
+        print("Name cannot be empty.")
+        return
+
+    student = {"roll": roll, "name": name, "held": 0, "attended": 0}
+    students.append(student)
+    students.sort(key=lambda item: item["roll"])
+    save_students()
+    print(
+        f"Student added: {roll} | {name} | "
+        f"Held: {student['held']} | Attended: {student['attended']}"
+    )
+
+
+def mark_attendance():
+    roll_text = input("Roll: ").strip()
+    if not roll_text.isdigit() or int(roll_text) <= 0:
+        print("Invalid roll number. Enter a positive number.")
+        return
+
+    roll = int(roll_text)
+    student = find_student(roll)
+    if student is None:
+        print(f"Roll number {roll} not found.")
+        return
+
+    status = input("Status (P/A): ").strip().upper()
+    if status not in ("P", "A"):
+        print("Invalid status. Enter P or A.")
+        return
+
+    student["held"] += 1
+    if status == "P":
+        student["attended"] += 1
+
+    save_students()
+    print(f"Attendance marked: {student['name']} | Status: {status}")
+
+
+def show_percentage():
+    roll_text = input("Roll: ").strip()
+    if not roll_text.isdigit() or int(roll_text) <= 0:
+        print("Invalid roll number. Enter a positive number.")
+        return
+
+    roll = int(roll_text)
+    student = find_student(roll)
+    if student is None:
+        print(f"Roll number {roll} not found.")
+        return
+
+    if student["held"] == 0:
+        print(f"{student['name']}: Attendance 0.00% (no classes held yet)")
+    else:
+        print(
+            f"{student['name']}: Attendance "
+            f"{attendance_percent(student):.2f}%"
+        )
+
+
+def show_shortage_list():
+    below = [
+        student for student in students
+        if student["held"] > 0
+        and attendance_percent(student) < REQUIRED_PERCENTAGE
+    ]
+    below.sort(key=lambda item: (attendance_percent(item), item["roll"]))
+
+    if not below:
+        print("No students are below 75% attendance.")
+        return
+
+    print("Below 75%:")
+    for student in below:
+        print(
+            f"{student['roll']} | {student['name']} | "
+            f"{attendance_percent(student):.2f}%"
+        )
+
+
+def list_students():
+    if not students:
+        print("No students found.")
+        return
+
+    print("Roll | Name | Held | Attended | Attendance")
+    for student in students:
+        print(
+            f"{student['roll']} | {student['name']} | "
+            f"{student['held']} | {student['attended']} | "
+            f"{attendance_percent(student):.2f}%"
+        )
+
+
+def main():
+    load_students()
+    while True:
+        print("\n===== Student Attendance Manager =====")
+        print("1. Add student")
+        print("2. Mark attendance (P/A)")
+        print("3. Show attendance percentage")
+        print("4. Show shortage list (below 75%)")
+        print("5. List all students")
+        print("6. Exit")
+
+        choice = input("Enter menu option: ").strip()
+        if choice == "1":
+            add_student()
+        elif choice == "2":
+            mark_attendance()
+        elif choice == "3":
+            show_percentage()
+        elif choice == "4":
+            show_shortage_list()
+        elif choice == "5":
+            list_students()
+        elif choice == "6":
+            save_students()
+            print("Data saved. Goodbye!")
+            break
+        else:
+            print("Invalid option. Enter a number from 1 to 6.")
+
 
 if __name__ == "__main__":
-    play_hangman()
+    main()
